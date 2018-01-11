@@ -205,6 +205,11 @@ class Action( models.Model ):
   def filter_instance( instance ):
     return Action.objects.filter( instance=instance )
 
+  @cinp.list_filter( name='plan', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' } ] )
+  @staticmethod
+  def filter_plan( plan ):
+    return Action.objects.filter( instance__plan=plan )
+
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
@@ -281,6 +286,16 @@ class Job( models.Model ):
   @staticmethod
   def filter_action( action ):
     return Job.objects.filter( action=action )
+
+  @cinp.list_filter( name='instance', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Builder.models.Instance' } ] )
+  @staticmethod
+  def filter_instance( instance ):
+    return Job.objects.filter( action__instance=instance )
+
+  @cinp.list_filter( name='plan', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' } ] )
+  @staticmethod
+  def filter_plan( plan ):
+    return Job.objects.filter( action__instance__plan=plan )
 
   @cinp.check_auth()
   @staticmethod
