@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+
+import os
+import django
+
+os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'architect.settings' )
+django.setup()
+
+from datetime import datetime, timezone, timedelta
+
+from architect.Contractor.models import Complex, BluePrint
+from architect.Plan.models import Plan, PlanComplex, PlanBluePrint, PlanTimeSeries
+from architect.TimeSeries.models import CostTS, AvailabilityTS, ReliabilityTS, RawTimeSeries
+
+
+print( 'Giving Blueprints their names...')
+for blueprint in BluePrint.objects.filter( name__isnull=True ):
+  blueprint.name = blueprint.contractor_id
+  blueprint.full_clean()
+  blueprint.save()
+
+try:
+  plan = Plan.objects.get( name='demo' )
+except Plan.DoesNotExist:
+  print( 'Creating the Plan...' )
+  plan = Plan( name='demo', description='demo', enabled=True )
+  plan.script = """
+cut_off: 0
+demo: weighted( *INDEX*, @count, ( 1 / *COST* ) )
+#demo-web: above_inclusive( demo, cut_off )
+#demo-ssh: below( demo, cut_off )
+"""
+  plan.config_values = {}
+  plan.max_inflight = 10
+  plan.last_change = datetime.now( timezone.utc ) - timedelta( days=1 )
+  plan.can_build = True
+  plan.can_destroy = True
+  plan.full_clean()
+  plan.save()
+
+  ts = RawTimeSeries( metric='data.count' )
+  ts.full_clean()
+  ts.save()
+
+  pts = PlanTimeSeries( plan=plan, timeseries=ts, script_name='count' )
+  pts.full_clean()
+  pts.save()
+
+  print( 'setting up blueprint link...' )
+  blueprint = BluePrint.objects.get( name='demo-web' )
+  pb = PlanBluePrint( plan=plan, blueprint=blueprint )
+  pb.full_clean()
+  pb.save()
+
+  blueprint = BluePrint.objects.get( name='demo-ssh' )
+  pb = PlanBluePrint( plan=plan, blueprint=blueprint )
+  pb.full_clean()
+  pb.save()
+
+print( 'Giving Complexes their tsnames, and setting up buckets...')
+for complex in Complex.objects.filter( tsname__isnull=True ):
+  complex.tsname = complex.contractor_id
+  complex.full_clean()
+  complex.save()
+
+  costts = CostTS( complex=complex )
+  costts.save()
+  availts = AvailabilityTS( complex=complex )
+  availts.save()
+  reliabts = ReliabilityTS( complex=complex )
+  reliabts.save()
+  pc = PlanComplex( plan=plan, complex=complex )
+  pc.cost = costts
+  pc.availability = availts
+  pc.reliability = reliabts
+  pc.full_clean()
+  pc.save()

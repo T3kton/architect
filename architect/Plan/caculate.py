@@ -7,9 +7,16 @@ from architect.tcalc.parser import parse
 def caculateCounts( plan, complex_name_list, complex_cost_list, complex_availability_list, complex_reliability_list ):
   result = {}
 
+  ts_map = {}
+
+  for pts in plan.plantimeseries_set.all():
+    ts_map[ pts.script_name ] = pts.timeseries.last_value
+
+  print( ts_map )
+
   calc = parse( plan.script )
   calc.setBuckets( plan.slots_per_complex, complex_cost_list, complex_availability_list, complex_reliability_list )
-  calc.setTimeSeriesValues( {} )
+  calc.setTimeSeriesValues( ts_map )
   slot_list_map = calc.evaluate()
 
   for blueprint_name in slot_list_map:
@@ -82,7 +89,7 @@ def caculateChangePlan( plan, complex_name_list, target, current ):
 
       elif diff < 0 and plan.can_build:
         for _ in range( diff, 0 ):
-          result.append( ( 'create', complex_name, blueprint_name ) )
+          result.append( ( 'create', 'complex', complex_name, blueprint_name ) )
 
       elif diff > 0 and plan.can_destroy:
         # first find anything that hasn't been built, this techinically just reduces some thrashing

@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 
 from cinp.orm_django import DjangoCInP as CInP
 
+from architect.Project.models import Site
 from architect.TimeSeries.models import CostTS, AvailabilityTS, ReliabilityTS, RawTimeSeries
 from architect.Contractor.models import Complex, BluePrint
 from architect.fields import MapField, script_name_regex, plan_name_regex
@@ -35,24 +36,27 @@ class Plan( models.Model ):
   slots_per_complex -> NOTE: changing this value can cause a lot of Instances to be
   created/destroyed/moved.
   """
-  name = models.CharField( max_length=50, primary_key=True )
+
+  name = models.TextField( max_length=200, primary_key=True )
+  site = models.ForeignKey( Site, on_delete=models.CASCADE )
   description = models.CharField( max_length=200 )
   enabled = models.BooleanField( default=False )  # enabled to be scanned and updated that is, any existing resources will not be affected
-  hostname_pattern = models.CharField( max_length=100, default='{plan}-{nonce}' )
+  change_cooldown = models.IntegerField( default=300, help_text='number of seconds to wait after a change before re-evaluating the plan' )
   config_values = MapField( blank=True, help_text='Contracor style config values, which are loaded into Contractor\'s Structure model when the Structure is created' )
+  last_change = models.DateTimeField( auto_now_add=True )
+  max_inflight = models.IntegerField( default=2, help_text='number of things that can be changing at the same time' )
+
+  hostname_pattern = models.CharField( max_length=100, default='{plan}-{blueprint}-{nonce}' )
   script = models.TextField()
   complex_list = models.ManyToManyField( Complex, through='PlanComplex' )
   blueprint_list = models.ManyToManyField( BluePrint, through='PlanBluePrint' )
   timeseries_list = models.ManyToManyField( RawTimeSeries, through='PlanTimeSeries' )
-  static_values = models.TextField( blank=True, null=True )  # TODO: What was this for?
   slots_per_complex = models.IntegerField( default=100 )
-  change_cooldown = models.IntegerField( default=300, help_text='number of seconds to wait after a change before re-evaluating the plan' )
-  max_inflight = models.IntegerField( default=2, help_text='number of things that can be changing at the same time' )
-  last_change = models.DateTimeField( blank=True, null=True )
-  nonce_counter = models.IntegerField( default=1 )  # is hashed (with other stuff) to be used as the nonc string, https://stackoverflow.com/questions/4567089/hash-function-that-produces-short-hashes
+  nonce_counter = models.IntegerField( default=1 )  # is hashed (with other stuff) to be used as the nonce string, https://stackoverflow.com/questions/4567089/hash-function-that-produces-short-hashes
   can_move = models.BooleanField( default=False )
   can_destroy = models.BooleanField( default=False )
   can_build = models.BooleanField( default=True )
+
   updated = models.DateTimeField( auto_now=True )
   created = models.DateTimeField( auto_now_add=True )
 

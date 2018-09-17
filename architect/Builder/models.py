@@ -10,7 +10,7 @@ from architect.fields import JSONField
 from architect.Contractor.models import Complex, BluePrint
 from architect.Plan.models import Plan
 
-from architect.Contractor.libcontractor import getContractor
+from architect.Contractor.Contractor import getContractor
 
 cinp = CInP( 'Builder', '0.1', doc="""This is where the Instances genenerated
 from the plan, as well as the models to support the handeling of the Instances
@@ -24,15 +24,9 @@ JOB_TASK_CHOICES = ( 'build', 'destroy', 'move' )
 JOB_STATE_CHOICES = ( 'new', 'waiting', 'done', 'error' )
 
 
-@cinp.model( not_allowed_verb_list=[ 'DELETE', 'CREATE', 'UPDATE', 'CALL' ], constant_set_map={ 'state': INSTANCE_STATE_CHOICES } )
+@cinp.model( not_allowed_verb_list=[ 'DELETE', 'CREATE', 'UPDATE', 'CALL' ], property_list=( 'type', ), constant_set_map={ 'state': INSTANCE_STATE_CHOICES } )
 class Instance( models.Model ):
-  """
-  A Deployment Instance, These are created and destroyed when the plan is evaluated.
-  Actions are created to change the state of each Instance.
-  """
-  nonce = models.CharField( max_length=26, unique=True )
   plan = models.ForeignKey( Plan, on_delete=models.PROTECT )
-  complex = models.ForeignKey( Complex, on_delete=models.PROTECT )
   state = models.CharField( max_length=10, choices=zip( INSTANCE_STATE_CHOICES, INSTANCE_STATE_CHOICES ) )
   blueprint = models.ForeignKey( BluePrint, on_delete=models.PROTECT )
   hostname = models.CharField( max_length=200, unique=True )
@@ -41,18 +35,34 @@ class Instance( models.Model ):
   updated = models.DateTimeField( auto_now=True )
   created = models.DateTimeField( auto_now_add=True )
 
-  def destroy( self ):
-    self.setUnrequested()
+  @property
+  def subclass( self ):
+    try:
+      return self.typedinstance
+    except AttributeError:
+      pass
+
+    try:
+      return self.complexinstance
+    except AttributeError:
+      pass
+
+    return self
+
+  @property
+  def type( self ):
+    real = self.subclass
+    if real != self:
+      return real.type
+
+    return 'Unknown'
 
   @staticmethod
-  def create( plan, complex_tsname, blueprint_name ):
-    result = Instance( plan=plan, complex=Complex.objects.get( tsname=complex_tsname ), blueprint=BluePrint.objects.get( name=blueprint_name ) )
-    result.state = 'new'
-    result.nonce = plan.nextNonce()
-    result.hostname = plan.hostname_pattern.format( **{ 'plan': plan.name, 'compex': complex_tsname, 'blueprint': blueprint_name, 'site': result.complex.site_id, 'nonce': result.nonce } )
-    result.full_clean()
-    result.save()
-    return result
+  def create( *args ):
+    raise Exception( 'Generic Instance not Createable' )
+
+  def destroy( self ):
+    self.setUnrequested()
 
   def clean( self, *args, **kwargs ):
     super().clean( *args, **kwargs )
@@ -93,7 +103,125 @@ class Instance( models.Model ):
     return True
 
   def __str__( self ):
-    return 'Instance({0}) "{1}" of "{2}" in "{3}" blueprint "{4}"'.format( self.pk, self.hostname, self.plan.name, self.complex, self.blueprint )
+    return 'Instance({0}) "{1}" of "{2}"'.format( self.pk, self.hostname, self.plan.name )
+
+
+@cinp.model( not_allowed_verb_list=[ 'DELETE', 'CREATE', 'UPDATE', 'CALL' ], property_list=( 'type', ), constant_set_map={ 'state': INSTANCE_STATE_CHOICES } )
+class TypedInstance( Instance ):
+  site_id = models.CharField( max_length=40 )
+  foundation_type = models.CharField( max_length=50 )
+  address_block_id = models.IntegerField()
+  address_offset = models.IntegerField()
+
+  @property
+  def subclass( self ):
+    return self
+
+  @property
+  def type( self ):
+    return 'Typed'
+
+  @staticmethod
+  def create( plan, site_id, foundation_type, blueprint_name, hostname, address_block_id, address_offset ):
+    print(  plan, foundation_type, blueprint_name, hostname )
+    result = TypedInstance( site_id=site_id, plan=plan, foundation_type=foundation_type, blueprint=BluePrint.objects.get( name=blueprint_name ) )
+    result.state = 'new'
+    result.address_block_id = address_block_id
+    result.address_offset = address_offset
+    result.hostname = hostname
+    result.full_clean()
+    result.save()
+    return result
+
+  def clean( self, *args, **kwargs ):
+    super().clean( *args, **kwargs )
+
+  @cinp.list_filter( name='plan', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' } ] )
+  @staticmethod
+  def filter_plan( plan ):
+    return TypedInstance.objects.filter( plan=plan )
+
+  @cinp.list_filter( name='complex', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Contractor.models.Complex' } ] )
+  @staticmethod
+  def filter_complex( complex ):
+    return TypedInstance.objects.filter( complex=complex )
+
+  @cinp.list_filter( name='plan_complex', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' }, { 'type': 'Model', 'model': 'architect.Contractor.models.Complex' } ] )
+  @staticmethod
+  def filter_plan_complex( plan, complex ):
+    return TypedInstance.objects.filter( plan=plan, complex=complex )
+
+  @cinp.list_filter( name='plan_state', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' }, { 'type': 'String', 'choice_list': INSTANCE_STATE_CHOICES } ] )
+  @staticmethod
+  def filter_plan_state( plan, state ):
+    return TypedInstance.objects.filter( plan=plan, state=state )
+
+  @cinp.check_auth()
+  @staticmethod
+  def checkAuth( user, verb, id_list, action=None ):
+    return True
+
+  def __str__( self ):
+    return 'TypedInstance({0}) "{1}" of "{2}"'.format( self.pk, self.hostname, self.plan.name )
+
+
+@cinp.model( not_allowed_verb_list=[ 'DELETE', 'CREATE', 'UPDATE', 'CALL' ], property_list=( 'type', ), constant_set_map={ 'state': INSTANCE_STATE_CHOICES } )
+class ComplexInstance( Instance ):
+  """
+  A Deployment Instance, These are created and destroyed when the plan is evaluated.
+  Actions are created to change the state of each Instance.
+  """
+  nonce = models.CharField( max_length=26, unique=True )
+  complex = models.ForeignKey( Complex, on_delete=models.PROTECT )
+
+  @property
+  def subclass( self ):
+    return self
+
+  @property
+  def type( self ):
+    return 'Complex'
+
+  @staticmethod
+  def create( plan, complex_tsname, blueprint_name ):
+    result = Instance( plan=plan, complex=Complex.objects.get( tsname=complex_tsname ), blueprint=BluePrint.objects.get( name=blueprint_name ) )
+    result.state = 'new'
+    result.nonce = plan.dynamicplan.nextNonce()
+    result.hostname = plan.dynamicplan.hostname_pattern.format( **{ 'plan': plan.name, 'compex': complex_tsname, 'blueprint': blueprint_name, 'site': result.complex.site_id, 'nonce': result.nonce } )
+    result.full_clean()
+    result.save()
+    return result
+
+  def clean( self, *args, **kwargs ):
+    super().clean( *args, **kwargs )
+
+  @cinp.list_filter( name='plan', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' } ] )
+  @staticmethod
+  def filter_plan( plan ):
+    return ComplexInstance.objects.filter( plan=plan )
+
+  @cinp.list_filter( name='complex', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Contractor.models.Complex' } ] )
+  @staticmethod
+  def filter_complex( complex ):
+    return ComplexInstance.objects.filter( complex=complex )
+
+  @cinp.list_filter( name='plan_complex', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' }, { 'type': 'Model', 'model': 'architect.Contractor.models.Complex' } ] )
+  @staticmethod
+  def filter_plan_complex( plan, complex ):
+    return ComplexInstance.objects.filter( plan=plan, complex=complex )
+
+  @cinp.list_filter( name='plan_state', paramater_type_list=[ { 'type': 'Model', 'model': 'architect.Plan.models.Plan' }, { 'type': 'String', 'choice_list': INSTANCE_STATE_CHOICES } ] )
+  @staticmethod
+  def filter_plan_state( plan, state ):
+    return ComplexInstance.objects.filter( plan=plan, state=state )
+
+  @cinp.check_auth()
+  @staticmethod
+  def checkAuth( user, verb, id_list, action=None ):
+    return True
+
+  def __str__( self ):
+    return 'ComplexInstance({0}) "{1}" of "{2}" in "{3}"'.format( self.pk, self.hostname, self.plan.name, self.complex )
 
 
 @cinp.model( not_allowed_verb_list=[ 'DELETE', 'CREATE', 'UPDATE', 'CALL' ], property_list=( 'progress', ), constant_set_map={ 'action': ACTION_ACTION_CHOICES } )
@@ -125,19 +253,42 @@ class Action( models.Model ):
     action.save()
 
   def start( self ):
-    if self.action == 'build' and ( self.instance.foundation_id is None or self.instance.structure_id is None ):
+    instance = self.instance.subclass
+    if self.action == 'build' and ( instance.foundation_id is None or instance.structure_id is None ):
       contractor = getContractor()
-      if self.instance.foundation_id is None:
-        self.instance.foundation_id = contractor.createFoundation( self.instance.complex.contractor_id, self.instance.blueprint.contractor_id, self.instance.hostname )
+      if instance.type == 'Complex':
+        if instance.foundation_id is None:
+          instance.foundation_id = contractor.createComplexFoundation( instance.complex.contractor_id, instance.blueprint.contractor_id, instance.hostname )
 
-      if self.instance.structure_id is None:
-        self.instance.structure_id = contractor.createStructure( self.instance.complex.site_id, self.instance.foundation_id, self.instance.blueprint.contractor_id, self.instance.hostname, self.instance.plan.config_values )
+        if instance.structure_id is None:
+          instance.structure_id = contractor.createComplexStructure( instance.site_id, instance.foundation_id, instance.blueprint.contractor_id, instance.hostname, instance.plan.config_values, instance.address_block_id, instance.offset )
+
+      elif instance.type == 'Typed':
+        if instance.foundation_id is None:
+          if instance.structure_id is not None:
+            raise ValueError( 'non ComplexInstance is missing foundation id but not structure id' )
+
+          instance.foundation_id, instance.structure_id = contractor.createFoundationStructure( instance.foundation_type, instance.site_id, instance.blueprint.contractor_id, instance.hostname, instance.plan.config_values, instance.address_block_id, instance.address_offset )
+          instance.state = 'processing'
+          instance.full_clean()
+          instance.save()
+
+          self.state[ 'todo' ] = []
+          self.state[ 'count' ] = 0
+          self.state[ 'current' ] = None
+          self.state[ 'done' ] = False
+          self.full_clean()
+          self.save()
+          return
+
+      else:
+        raise ValueError( 'Unknown instance type "{0}"'.format( self.instance.type ) )
 
     print( "---------{0}--------".format( self.instance.pk ) )
 
-    self.instance.state = 'processing'
-    self.instance.full_clean()
-    self.instance.save()
+    instance.state = 'processing'
+    instance.full_clean()
+    instance.save()
 
     if self.action == 'build':
       self.state[ 'todo' ] = [ ( 'build', 'foundation' ), ( 'build', 'structure' ) ]

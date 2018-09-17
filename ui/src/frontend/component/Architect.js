@@ -25,6 +25,21 @@ class Architect
   logout = () => {};
   keepalive = () => {};
 
+  projectLoaderRescan = () =>
+  {
+    return this.cinp.call( '/api/v1/Project/Loader(rescan)')
+  };
+
+  applyProjectChange = ( id ) =>
+  {
+    return this.cinp.call( '/api/v1/Project/Change:' + id + ':(apply)')
+  };
+
+  getChangeList = () =>
+  {
+    return this.cinp.getFilteredObjects( '/api/v1/Project/Change' );
+  };
+
   getPlanList = () =>
   {
     return this.cinp.getFilteredObjects( '/api/v1/Plan/Plan' );

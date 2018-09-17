@@ -33,7 +33,10 @@ class GunicornApp( BaseApplication ):
 if __name__ == '__main__':
   logging.basicConfig()
   logger = logging.getLogger()
-  logger.setLevel( logging.DEBUG )
+  if DEBUG:
+    logger.setLevel( logging.DEBUG )
+  else:
+    logger.setLevel( logging.INFO )
   logger.info( 'Starting up...' )
 
   logger.debug( 'Creating Server...' )
@@ -45,6 +48,7 @@ if __name__ == '__main__':
   app.registerNamespace( '/', 'architect.TimeSeries' )
   app.registerNamespace( '/', 'architect.Builder' )
   app.registerNamespace( '/', 'architect.Plan' )
+  app.registerNamespace( '/', 'architect.Project' )
   app.registerNamespace( '/', 'architect.Inspector' )
 
   logger.info( 'Validating...' )

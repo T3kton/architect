@@ -56,6 +56,8 @@ def parse( script ):
   return parser.parse( script )
 
 
+# TODO: subsetting needs to be 100%, otherwise the user dosen't know the maxvalue with out to much work.
+
 # NOTE: Function paramaters must be numbered, so that the number of required
 # functions is correctly detected
 function_map = {
@@ -80,7 +82,7 @@ function_init_map = {
   if {1} > _T_ or {1} < 1:
     raise ValueError( 'Count should be more than 0 and less than the number of slots' )
 
-  linear_slots_{ID} = [ math.ceil( i * ( _T_ / {1} ) ) for i in range( 0, int( {1} ) ) ]
+  linear_slots_{ID} = [ math.ceil( i * safe_div( _T_, {1} ) ) for i in range( 0, int( {1} ) ) ]
 """,
 
                       'weighted': """
@@ -95,7 +97,7 @@ function_init_map = {
     try:
       interval = ( _T_ * ( avg_weight / {2}[ bucket ] ) ) / {1}
       interval = min( interval, SLOTS_PER_BUCKET )
-    except ZeroDivisionError:
+    except ( ZeroDivisionError, TypeError ):
       interval = SLOTS_PER_BUCKET
 
     if interval < 1:
@@ -239,7 +241,15 @@ class Parser():
 
     body = self._eval( ast )
 
-    init = 'def init( _T_, _C_, _A_, _R_, ts_map ):\n'
+    init = """import sys
+def safe_div( numerator, denominator ):
+  if denominator == 0:
+    return sys.maxsize
+
+  return numerator / denominator
+
+def init( _T_, _C_, _A_, _R_, ts_map ):
+"""
     if self.function_initer_list:
       for name, init_id, paramaters in self.function_initer_list:
         init += function_init_map[ name ].format( *paramaters, ID=init_id )
@@ -325,7 +335,7 @@ def main( _I_, _T_, _C_, _A_, _R_, ts_map ):
   def ts_value( self, node ):
     name = node.text
 
-    return 'ts_map[ \'{0}\' ]'.format( name[1] )
+    return 'ts_map[ \'{0}\' ]'.format( name[ 1: ] )
 
   def variable( self, node ):
     name = node.text
@@ -337,6 +347,9 @@ def main( _I_, _T_, _C_, _A_, _R_, ts_map ):
 
   def blueprint( self, node ):
     name = node.text
+
+    if self.mode == 'init':
+      raise ValueError( 'Unable to refrence values in init' )
 
     return 'b_map[ \'{0}\' ]'.format( name[ 1: ] )
 
@@ -353,15 +366,34 @@ def main( _I_, _T_, _C_, _A_, _R_, ts_map ):
       right_list = True
       right = right[ 1:-1 ]
 
-    value = '( {0} {1} {2} )'
-    if left_list and right_list:
-      value = '[ {0}[ i ] {1} {2}[ i ] for i in range( 0, len( {0} ) ) ]'  # hopfully both lists have the same length
-    elif left_list:
-      value = '[ i {1} {2} for i in {0} ]'
-    elif right_list:
-      value = '[ {0} {1} i for i in {2} ]'
+    operator = node.children[2].text
 
-    return value.format( left, node.children[2].text, right )
+    if operator == '/':
+      if left_list and right_list:
+        if len( left_list ) != len( right_list ):
+          raise ValueError( 'left and right lists are not the same length' )
+
+        return '[ safe_div( {0[i]}, {2}[i] ) for i in range( 0, len( {0} ) ) ]'.format( left, '', right )
+      elif left_list:
+        return '[ safe_div( i, {2} ) for i in {0} ]'.format( left, '', right )
+      elif right_list:
+        return '[ safe_div( {0}, i ) for i in {2} ]'.format( left, '', right )
+
+      return 'safe_div( {0}, {1} )'.format( left, right )
+
+    else:
+      value = '( {0} {1} {2} )'
+      if left_list and right_list:
+        if len( left_list ) != len( right_list ):
+          raise ValueError( 'left and right lists are not the same length' )
+
+        value = '[ {0}[ i ] {1} {2}[ i ] for i in range( 0, len( {0} ) ) ]'
+      elif left_list:
+        value = '[ i {1} {2} for i in {0} ]'
+      elif right_list:
+        value = '[ {0} {1} i for i in {2} ]'
+
+    return value.format( left, operator, right )
 
   def not_( self, node ):
     return 'not bool( {0} )'.format( self._eval( node.children[1] ) )

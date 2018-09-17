@@ -17,7 +17,7 @@ def updateInspection( inspection ):
     print( 'value_list: {0}'.format( value_list ) )
 
     # skip None values in value_list some how
-    normalized_value = ( member.a_value * value_list[0] ) + ( member.b_value * value_list[1] ) + ( ( 1 - ( member.a_value + member.b_value ) ) * value_list[2] ) # is this the right order?
+    normalized_value = ( member.a_value * value_list[0] ) + ( member.b_value * value_list[1] ) + ( ( 1 - ( member.a_value + member.b_value ) ) * value_list[2] )  # is this the right order?
 
     if member.scaler_type == 'liner':
       target_count = int( normalized_value * member.p_value )

@@ -2,6 +2,6 @@
 
 while true
 do
- /usr/local/architect/util/fakeMonitor
+ /usr/local/architect/demo_test/testData_monitor
  sleep 10
 done

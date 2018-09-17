@@ -7,6 +7,6 @@ fi
 
 /usr/local/architect/util/manage.py migrate
 
-/usr/local/architect/util/testData docker
+/usr/local/architect/demo_test/testData docker
 
 /usr/local/architect/cron/planEvaluate

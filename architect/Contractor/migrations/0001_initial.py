@@ -7,15 +7,16 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
+        ('Project', '0001_initial'),
     ]
 
     operations = [
         migrations.CreateModel(
             name='BluePrint',
             fields=[
-                ('id', models.AutoField(verbose_name='ID', auto_created=True, serialize=False, primary_key=True)),
-                ('contractor_id', models.CharField(max_length=40, unique=True, blank=True, null=True)),
-                ('name', models.CharField(max_length=50, unique=True, blank=True, null=True)),
+                ('id', models.AutoField(verbose_name='ID', primary_key=True, auto_created=True, serialize=False)),
+                ('contractor_id', models.CharField(max_length=40, null=True, unique=True, blank=True)),
+                ('name', models.CharField(max_length=50, null=True, unique=True, blank=True)),
                 ('updated', models.DateTimeField(auto_now=True)),
                 ('created', models.DateTimeField(auto_now_add=True)),
             ],
@@ -23,12 +24,10 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Complex',
             fields=[
-                ('id', models.AutoField(verbose_name='ID', auto_created=True, serialize=False, primary_key=True)),
-                ('contractor_id', models.CharField(max_length=40, unique=True, blank=True, null=True)),
-                ('site_id', models.CharField(max_length=40)),
-                ('tsname', models.CharField(max_length=50, unique=True, blank=True, null=True)),
+                ('name', models.CharField(max_length=40, primary_key=True, serialize=False)),
                 ('updated', models.DateTimeField(auto_now=True)),
                 ('created', models.DateTimeField(auto_now_add=True)),
+                ('site', models.ForeignKey(to='Project.Site')),
             ],
         ),
     ]

@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+
+import os
+import django
+
+os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'architect.settings' )
+django.setup()
+
+import time
+import random
+
+from architect.TimeSeries.TimeSeries import getTS
+from architect.Contractor.models import Complex
+
+baseline = {
+            'cost': 2,
+            'availability': 0.95,
+            'reliability': 0.90
+           }
+
+data = {
+         'web_requests': 50,
+         'count': 15,
+       }
+
+nudges = {
+          'localvbox': { 'cost': 50, 'reliability': 0.5 },
+          'nuc1': { 'cost': 50, 'reliability': 0.5 },
+          'nuc2': { 'cost': 50, 'reliability': 0.6 },
+          'docker-e02': { 'reliability': -0.3 }
+         }
+
+ts = getTS()
+
+timestamp = time.time()
+
+ts_list = []
+
+for complex in Complex.objects.all():
+  name = complex.tsname
+  cost = baseline[ 'cost' ]
+  try:
+    cost += nudges[ name ][ 'cost' ]
+  except KeyError:
+    pass
+
+  availability = baseline[ 'availability' ] + ( ( random.random() - 0.5 ) * 0.05 )
+  try:
+    availability += nudges[ name ][ 'availability' ]
+  except KeyError:
+    pass
+
+  reliability = baseline[ 'reliability' ] + ( ( random.random() - 0.5 ) * 0.05 )
+  try:
+    reliability += nudges[ name ][ 'reliability' ]
+  except KeyError:
+    pass
+
+  ts_list.append( ( 'complex.{0}.cost'.format( name ), ( timestamp, cost ) ) )
+  ts_list.append( ( 'complex.{0}.availability'.format( name ), ( timestamp, availability ) ) )
+  ts_list.append( ( 'complex.{0}.reliability'.format( name ), ( timestamp, reliability ) ) )
+
+for key, value in data.items():
+  ts_list.append( ( 'data.{0}'.format( key ), ( timestamp, value ) ) )
+
+ts.put( ts_list )
+
+print( timestamp )

@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+
+import os
+import django
+
+os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'architect.settings' )
+django.setup()
+
+from datetime import datetime, timedelta, timezone
+
+from django.db.models import Count
+
+from architect.Plan.models import Plan
+from architect.Builder.models import Instance
+
+from architect.Plan.caculate import caculateCounts, caculateChangePlan
+from architect.Builder.lib import cleanUp, applyChanges
+
+
+CLEANUP_DESTROYED_AFFTER = 3600  # in seconds
+
+# IMPORTANT!!!! this dosen't have any locking, only one cron process at a time
+# Also: this really need through testing, make sure to test when there are jobs/Actions inflight
+
+cleanUp( CLEANUP_DESTROYED_AFFTER )
+
+for plan in Plan.objects.filter( enabled=True ):
+  print( 'Doing Plan "{0}"...'.format( plan ) )
+
+  if plan.change_cooldown > 0 and plan.last_change > datetime.now( timezone.utc ) - timedelta( seconds=plan.change_cooldown ):
+    print( 'still hot, skipping...' )
+    continue
+
+  complex_name_list = []
+  complex_cost_list = []
+  complex_availability_list = []
+  complex_reliability_list = []
+  for pc in plan.plancomplex_set.all().order_by( 'id' ):  # Important the complexes are evaulated in a consistant order_by
+    complex_name_list.append( pc.complex.tsname )
+    complex_cost_list.append( pc.cost.last_value )
+    complex_availability_list.append( pc.availability.last_value )
+    complex_reliability_list.append( pc.reliability.last_value )
+
+  print( complex_name_list )
+  print( complex_cost_list )
+  print( complex_availability_list )
+  print( complex_reliability_list )
+
+  target_map = caculateCounts( plan, complex_name_list, complex_cost_list, complex_availability_list, complex_reliability_list )
+
+  current_map = {}
+  for blueprint_name in target_map.keys():
+    current_map[ blueprint_name ] = dict( ( i[ 'complex__tsname' ], i[ 'count' ] ) for i in Instance.objects.filter( plan=plan, blueprint__name=blueprint_name ).exclude( state='destroyed' ).values( 'complex__tsname' ).annotate( count=Count( 'id' ) ) )
+
+  print( 'current' )
+  print( current_map )
+  print( 'target' )
+  print( target_map )
+
+  change_list = caculateChangePlan( plan, complex_name_list, target_map, current_map )
+  print( change_list )
+
+  if not change_list:
+    continue
+
+  plan.last_change = datetime.now( timezone.utc )
+  plan.full_clean()
+  plan.save()
+
+  applyChanges( plan, change_list )

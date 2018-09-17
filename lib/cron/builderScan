@@ -6,12 +6,10 @@ import django
 os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'architect.settings' )
 django.setup()
 
-import logging
-
 from architect.Plan.models import Plan
 from architect.Builder.models import Action, Job
 
-logging.basicConfig( level=logging.DEBUG )
+ORDER_OF_OPERATIONS = [ 'move', 'build', 'destroy', 'rebuild' ]
 
 print( 'Checking Plans...' )
 for plan in Plan.objects.all():
@@ -22,7 +20,10 @@ for plan in Plan.objects.all():
   if actions_needed <= 0:
     continue
 
-  for action in Action.objects.filter( instance__plan=plan, state={} )[ :actions_needed ]:
+  action_list = list( Action.objects.filter( instance__plan=plan, state={} ) )
+  action_list.sort( key=lambda action: ORDER_OF_OPERATIONS.index( action.action ) )
+
+  for action in action_list[ :actions_needed ]:
     action.start()
 
 print( 'Running Jobs...' )

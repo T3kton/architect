@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+import os
+import django
+
+os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'architect.settings' )
+django.setup()
+
+from architect.Contractor.models import BluePrint
+from architect.Plan.models import PlanBluePrint
+from architect.Builder.models import Instance
+from architect.Contractor.Contractor import getContractor
+
+contractor = getContractor()
+
+print( 'Checking Blueprint usage' )
+
+used_blueprints = set( PlanBluePrint.objects.all().value_list( 'blueprint', flat=True ) )
+used_blueprints += set( Instance.objects.all().value_list( 'blueprint', flat=True ) )
+all_blueprints = set( BluePrint.objects.all().values_list( 'name', flat=True ) )
+
+for pk in list( all_blueprints - used_blueprints ):
+  blueprint = BluePrint.objects.get( pk=pk )
+  blueprint.name = None
+  blueprint.full_clean()
+  blueprint.save()
+
+print( 'Getting master BluePrint lists...' )
+
+master_list = set( list( contractor.getBluePrints() ) )
+local_list = set( BluePrint.objects.filter( contractor_id__isnull=False ).values_list( 'contractor_id', flat=True ) )
+
+remove_list = list( local_list - master_list )
+add_list = list( master_list - local_list )
+
+for contractor_id in add_list:
+  print( 'Adding "{0}"...'.format( contractor_id ) )
+  blueprint = BluePrint( contractor_id=contractor_id )
+  blueprint.full_clean()
+  blueprint.save()
+
+for contractor_id in remove_list:
+  blueprint = BluePrint.objects.get( contractor_id=contractor_id )
+  if blueprint.tsname is None:   # not attached to anything can just remove
+    print( 'Deleting "{0}"...'.format( contractor_id ) )
+    blueprint.delete()
+
+  else:
+    print( 'Disabeling "{0}"...'.format( contractor_id ) )
+    blueprint.contractor_id = None
+    blueprint.full_clean()
+    blueprint.save()
+
+# TODO: probalby need to re-thing the local bluprint names, for now only removing them for this script seems a bit silly
+print( 'Enabeling Blueprints' )
+
+for blueprint in BluePrint.objects.filter( name__isnull=True ):
+  blueprint.name = blueprint.contractor_id
+  blueprint.full_clean()
+  blueprint.save()
+
+print( 'Done' )
